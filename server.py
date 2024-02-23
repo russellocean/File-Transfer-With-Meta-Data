@@ -1,9 +1,9 @@
 import hashlib
 import logging
 import os
-import struct
 import sys
 from socket import *
+from struct import calcsize, unpack
 
 
 class FileTransferServer:
@@ -76,10 +76,10 @@ class FileTransferServer:
             self.server_socket = socket(AF_INET, SOCK_STREAM)
             self.server_socket.bind(("", self.port))
             self.server_socket.listen(5)
-            self.logger.info(f"Server started and listening on port {self.port}")
+            print(f"Server started and listening on port {self.port}")
             return True
         except OSError as e:
-            self.logger.error(f"Failed to start server: {e}")
+            print(f"Failed to start server: {e}")
             return False
 
     def write_file(self, filename, data):
@@ -91,6 +91,56 @@ class FileTransferServer:
         """
         with open(os.path.join("received_files", filename), "wb") as file:
             file.write(data)
+
+    def receive_data(self, client_socket):
+        """
+        Receives data from the client socket in chunks until all expected data is received.
+
+        Parameters:
+            client_socket (socket): The client socket from which data is to be received.
+
+        Returns:
+            bytes: The received data.
+        """
+        try:
+            # First, receive the size of the data, first 4 bytes contain this information
+            data_size_bytes = client_socket.recv(4)
+            if not data_size_bytes:
+                print("Failed to receive data size.")
+                return None
+
+            data_size = unpack("!I", data_size_bytes)[0]
+            print(f"Data size: {str(data_size)[:50]}")
+
+            # Initialize an empty bytes object to hold the received data
+            received_data = b""
+
+            # Loop until all data is received
+            while len(received_data) < data_size:
+                # Calculate the size of the next chunk
+                chunk_size = min(4096, data_size - len(received_data))
+                chunk = client_socket.recv(chunk_size)
+                if not chunk:
+                    # If an empty chunk is received, it means the connection has been closed
+                    print("Connection closed before all data was received.")
+                    break
+                received_data += chunk
+
+            print(
+                f"Received data: {str(received_data)[:50]}...{str(received_data)[-50:]}"
+            )
+
+            if len(received_data) == data_size:
+
+                print("All data received successfully.")
+            else:
+                print("Did not receive all expected data.")
+
+            return received_data
+        except Exception as e:
+            print(f"An error occurred while receiving data: {e}")
+            self.shutdown()
+        return None
 
     def run(self):
         """
@@ -127,31 +177,45 @@ class FileTransferServer:
         """
         while self.is_running:
             try:
+
                 client_socket, address = self.server_socket.accept()
                 print(f"Connection from {address} has been established.")
 
-                # The following steps are placeholders and need to be implemented
-                # Step 2: Receive Data
-                received_data = self.receive_data(client_socket)
+                while self.is_running:
+                    # Step 2: Receive Data
+                    received_data = self.receive_data(client_socket)
+                    if not received_data:
+                        # No more data, client likely closed the connection
+                        self.shutdown()
+                        return
 
-                # Step 3: Unpack Metadata
-                metadata, file_data, received_hash = self.unpack_metadata(received_data)
+                    # Step 3: Unpack Metadata
+                    metadata, file_data, received_hash = self.unpack_metadata(
+                        received_data
+                    )
+                    print(f"Unpacked metadata: {str(metadata)}")
+                    print(f"Unpacked hash: {received_hash.hex()}")
 
-                # Step 4: Verify Integrity
-                computed_hash = self.compute_hash(metadata + file_data)
-                if computed_hash == received_hash:
-                    # Step 5: Save File
-                    self.write_file(metadata["filename"], file_data)
+                    # Step 4: Verify Integrity
+                    # The client calculates the has from the metadata + file data and sends it to the server, so we need to do the same
+                    combined_data = received_data[: -metadata["hash_length"]]
+                    computed_hash = self.compute_hash(
+                        combined_data, metadata["hash_length"]
+                    )
 
-                    # Step 6: Send Hash Back
-                    client_socket.sendall(computed_hash)
-                else:
-                    print("Data integrity verification failed.")
+                    if computed_hash == received_hash:
+                        # Step 5: Save File
+                        self.write_file(metadata["filename"], file_data)
+
+                        # Step 6: Send Hash Back
+                        client_socket.sendall(computed_hash)
+                        print(f"Hash sent back to client. {computed_hash.hex()}")
+                    else:
+                        print("Data integrity verification failed.")
 
             except Exception as e:
                 print(f"An error occurred: {e}")
-            finally:
-                client_socket.close()
+                self.shutdown()
 
     def unpack_metadata(self, data):
         """
@@ -186,53 +250,74 @@ class FileTransferServer:
             metadata. The metadata format is expected to be consistent with the client's
             sending format.
         """
-        # Extract the length of the filename (2 bytes) and unpack it as an unsigned short
-        filename_length = struct.unpack("!H", data[:2])[0]
-        data = data[2:]  # Move past the extracted part
+        print("---------- Unpacking Metadata -------------")
 
-        # Extract the filename using the previously obtained length and decode it from bytes to a string
-        filename = struct.unpack(f"!{filename_length}s", data[:filename_length])[
-            0
-        ].decode("utf-8")
-        data = data[filename_length:]  # Move past the extracted part
-
-        # Extract the length of the file extension (1 byte) and unpack it as an unsigned byte
-        file_extension_length = struct.unpack("!B", data[:1])[0]
-        data = data[1:]  # Move past the extracted part
-
-        # Extract the file extension using the previously obtained length and decode it from bytes to a string
-        file_extension = struct.unpack(
-            f"!{file_extension_length}s", data[:file_extension_length]
-        )[0].decode("utf-8")
-        data = data[file_extension_length:]  # Move past the extracted part
-
-        # Extract the length of the creation date string (1 byte) and unpack it as an unsigned byte
-        created_length = struct.unpack("!B", data[:1])[0]
-        data = data[1:]  # Move past the extracted part
-
-        # Extract the creation date string using the previously obtained length and decode it from bytes to a string
-        created = struct.unpack(f"!{created_length}s", data[:created_length])[0].decode(
-            "utf-8"
+        # The client encodes like provides:
+        # ---------- Encoding Metadata -------------
+        # Metadata size: 45
+        # Metadata format: !HBB9s3s24sIB
+        # Filename length: 9
+        # File extension length: 3
+        # Created length: 24
+        # File size: 89877
+        # Hash length: 8
+        # Variable part size: 36
+        # Filename: test2.jpg
+        # File extension: jpg
+        # Created date: Fri Feb 23 11:38:47 2024
+        # Hash length type: <class 'int'>
+        # unpack the initial part of the metadata to get the lengths
+        metadata_size = calcsize("!HBB")
+        filename_length, file_extension_length, created_length = unpack(
+            "!HBB", data[:metadata_size]
         )
-        data = data[created_length:]  # Move past the extracted part
 
-        # Extract the file size (4 bytes) and unpack it as an unsigned int
-        file_size = struct.unpack("!I", data[:4])[0]
-        data = data[4:]  # Move past the extracted part
+        # unpack the rest of the metadata to get the variable length parts
+        filename = data[metadata_size : metadata_size + filename_length].decode("utf-8")
+        file_extension = data[
+            metadata_size
+            + filename_length : metadata_size
+            + filename_length
+            + file_extension_length
+        ].decode("utf-8")
+        created = data[
+            metadata_size
+            + filename_length
+            + file_extension_length : metadata_size
+            + filename_length
+            + file_extension_length
+            + created_length
+        ].decode("utf-8")
+        file_size, hash_length = unpack(
+            "!IB",
+            data[
+                metadata_size
+                + filename_length
+                + file_extension_length
+                + created_length : metadata_size
+                + filename_length
+                + file_extension_length
+                + created_length
+                + 5
+            ],
+        )
+        print(f"Filename: {filename}")
+        print(f"File extension: {file_extension}")
+        print(f"Created date: {created}")
+        print(f"File size: {file_size}")
+        print(f"Hash length: {hash_length}")
 
-        # Extract the length of the hash (1 byte) and unpack it as an unsigned byte
-        hash_length = struct.unpack("!B", data[:1])[0]
-        data = data[1:]  # Move past the extracted part
-
-        # Separate the file data and the hash data based on the hash length
+        # extract the file data and hash from the remaining data
         file_data = data[
-            :-hash_length
-        ]  # All but the last 'hash_length' bytes are file data
-        hash_data = data[
-            -hash_length:
-        ]  # The last 'hash_length' bytes are the hash data
-
-        # Compile the extracted metadata into a dictionary
+            metadata_size
+            + filename_length
+            + file_extension_length
+            + created_length
+            + 5 : -hash_length
+        ]
+        hash_data = data[-hash_length:]
+        print(f"File data: {str(file_data)[:50]}...{str(file_data)[-50:]}")
+        print(f"Hash data: {hash_data.hex()}")
         metadata = {
             "filename": filename,
             "file_extension": file_extension,
@@ -241,7 +326,6 @@ class FileTransferServer:
             "hash_length": hash_length,
         }
 
-        # Return the metadata, file data, and hash data
         return metadata, file_data, hash_data
 
     def compute_hash(self, data, hash_length):
@@ -273,8 +357,13 @@ class FileTransferServer:
             - This method is used within the file transfer process to ensure the integrity
             of received data by comparing the computed hash with one provided by the client.
         """
+        print("---------- Computing Hash -------------")
         hash_obj = hashlib.shake_128()
         hash_obj.update(data)
+
+        print(f"Hash length: {hash_length}")
+        print(f"Hash: {hash_obj.digest(hash_length).hex()}")
+        print(f"File data in compute hash: {str(data)[:50]}...{str(data)[-50:]}")
         return hash_obj.digest(hash_length)
 
     def shutdown(self):
@@ -302,6 +391,7 @@ class FileTransferServer:
         if self.server_socket:
             self.server_socket.close()
 
+        self.is_running = False
         self.logger.removeHandler(self.handler)
 
 

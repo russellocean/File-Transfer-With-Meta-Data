@@ -1,10 +1,10 @@
 import hashlib
 import logging
 import os
-import struct
 import sys
 import time
 from socket import *
+from struct import calcsize, pack
 
 
 class FileTransferClient:
@@ -57,12 +57,10 @@ class FileTransferClient:
         try:
             self.client_socket = socket(AF_INET, SOCK_STREAM)
             self.client_socket.connect((self.host, self.port))
-            self.logger.info(f"Connected to server at {self.host}:{self.port}")
+            print(f"Connected to server at {self.host}:{self.port}")
             return True
         except OSError as e:
-            self.logger.error(
-                f"Failed to connect to server at {self.host}:{self.port}. Error: {e}"
-            )
+            print(f"Failed to connect to server at {self.host}:{self.port}. Error: {e}")
             return False
 
     def read_file(self, filepath):
@@ -109,26 +107,55 @@ class FileTransferClient:
             if client.start():
                 client.send_file("source/test1.jpg")
         """
+        print("-----------------------------------")
+        print(f"Sending file: {filepath}")
+
         # Step 1: Encode Metadata
+        print("Encoding metadata for the file.")
         metadata = self.encode_metadata(filepath)
+        print(f"Metadata: {metadata}")
 
         # Step 2: Read File Data
+        print(f"Reading file data from {filepath}.")
         file_data = self.read_file(filepath)
+        print(f"File data: {str(file_data)[:50]}...{str(file_data)[-50:]}")
+        print(f"File data length: {len(file_data)}")
 
         # Step 3: Compute Hash
+        print("Computing hash for the combined metadata and file data.")
         combined_data = metadata + file_data
         hash_value = self.compute_hash(combined_data)
+        print(f"Hash: {hash_value}")
+
+        # Calculate the total size of the data packet (metadata + file data + hash)
+        total_data_size = len(metadata) + len(file_data) + len(hash_value)
+
+        # Pack the total size as a 4-byte integer
+        total_size_packed = pack("!I", total_data_size)
+        print(f"Total data size: {total_data_size}")
+
+        # Prepend the total size to the data packet
+        data_packet = total_size_packed + metadata + file_data + hash_value
+
+        print(f"Data packet: {str(data_packet)[:50]}...{str(data_packet)[-50:]}")
 
         # Step 4: Send Data
-        self.client_socket.sendall(metadata + file_data + hash_value)
+        print(
+            "Sending combined data (size + metadata + file data + hash) to the server."
+        )
+        self.client_socket.sendall(data_packet)
+        print(f"File {filepath} sent to the server.")
 
         # Step 5: Receive and Verify Hash
+        print("Waiting for hash verification from the server.")
         server_hash = self.client_socket.recv(self.hash_length)
+
+        print(f"Server hash: {server_hash.hex()}")
         if server_hash == hash_value:
-            self.logger.info("File sent and verified successfully.")
+            print("File sent and verified successfully.")
             return True
         else:
-            self.logger.error("File verification failed.")
+            print("File verification failed.")
             return False
 
     def encode_metadata(self, filepath):
@@ -162,6 +189,8 @@ class FileTransferClient:
             The encoded format is designed to be unpacked by the corresponding server
             method which expects the same structure.
         """
+        print("---------- Encoding Metadata -------------")
+
         # The following code gets the various file information you need to complete this function
         filename = os.path.basename(filepath)
         file_extension = os.path.splitext(filename)[1].replace(".", "")
@@ -173,17 +202,44 @@ class FileTransferClient:
         file_extension_bytes = file_extension.encode("utf-8")
         created_date_bytes = created_date.encode("utf-8")
 
-        # Pack the metadata
-        metadata = struct.pack(
-            f"!H{len(filename_bytes)}sB{len(file_extension_bytes)}sB{len(created_date_bytes)}sI",
+        # Pack the metadata into a byte format
+        metadata_format = "!H"  # filename length (ushort)
+        metadata_format += "B"  # file extension length (ubyte)
+        metadata_format += "B"  # created length (ubyte)
+        metadata_format += f"{len(filename_bytes)}s"  # filename (varchar)
+        metadata_format += f"{len(file_extension_bytes)}s"  # file extension (varchar)
+        metadata_format += f"{len(created_date_bytes)}s"  # created (varchar)
+        metadata_format += "I"  # file size (uint)
+        metadata_format += "B"  # hash length (ubyte)
+
+        print(f"Metadata size: {calcsize(metadata_format)}")
+        print(f"Metadata format: {metadata_format}")
+        print(f"Filename length: {len(filename_bytes)}")
+        print(f"File extension length: {len(file_extension_bytes)}")
+        print(f"Created length: {len(created_date_bytes)}")
+        print(f"File size: {file_size}")
+        print(f"Hash length: {self.hash_length}")
+        print(
+            f"Variable part size: {len(filename_bytes) + len(file_extension_bytes) + len(created_date_bytes)}"
+        )
+        print(f"Filename: {filename}")
+        print(f"File extension: {file_extension}")
+        print(f"Created date: {created_date}")
+        print(f"Hash length type: {type(self.hash_length)}")
+
+        metadata = pack(
+            metadata_format,
             len(filename_bytes),
-            filename_bytes,
             len(file_extension_bytes),
-            file_extension_bytes,
             len(created_date_bytes),
+            filename_bytes,
+            file_extension_bytes,
             created_date_bytes,
             file_size,
+            self.hash_length,
         )
+
+        print("-----------------------------------")
         return metadata
 
     def compute_hash(self, data):
@@ -213,6 +269,10 @@ class FileTransferClient:
         """
         hash_obj = hashlib.shake_128()
         hash_obj.update(data)
+
+        print(f"Hash length: {self.hash_length}")
+        print(f"Hash: {hash_obj.digest(self.hash_length).hex()}")
+        print(f"File data in compute hash: {str(data)[:50]}...{str(data)[-50:]}")
         return hash_obj.digest(self.hash_length)
 
     def shutdown(self):
