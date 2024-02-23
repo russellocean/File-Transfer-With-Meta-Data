@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import struct
@@ -272,8 +273,9 @@ class FileTransferServer:
             - This method is used within the file transfer process to ensure the integrity
             of received data by comparing the computed hash with one provided by the client.
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
+        hash_obj = hashlib.shake_128()
+        hash_obj.update(data)
+        return hash_obj.digest(hash_length)
 
     def shutdown(self):
         """
@@ -297,7 +299,8 @@ class FileTransferServer:
         """
         self.logger.info("Server is shutting down...")
 
-        # TODO: Implement the functionality described in this function's docstring
+        if self.server_socket:
+            self.server_socket.close()
 
         self.logger.removeHandler(self.handler)
 
