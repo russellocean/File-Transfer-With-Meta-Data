@@ -107,8 +107,27 @@ class FileTransferClient:
             if client.start():
                 client.send_file("source/test1.jpg")
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
+        # Step 1: Encode Metadata
+        metadata = self.encode_metadata(filepath)
+
+        # Step 2: Read File Data
+        file_data = self.read_file(filepath)
+
+        # Step 3: Compute Hash
+        combined_data = metadata + file_data
+        hash_value = self.compute_hash(combined_data)
+
+        # Step 4: Send Data
+        self.client_socket.sendall(metadata + file_data + hash_value)
+
+        # Step 5: Receive and Verify Hash
+        server_hash = self.client_socket.recv(self.hash_length)
+        if server_hash == hash_value:
+            self.logger.info("File sent and verified successfully.")
+            return True
+        else:
+            self.logger.error("File verification failed.")
+            return False
 
     def encode_metadata(self, filepath):
         """
