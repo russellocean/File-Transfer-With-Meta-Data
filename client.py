@@ -249,7 +249,7 @@ class FileTransferClient:
 
 
 if __name__ == "__main__":
-    client = FileTransferClient("localhost", 5000)
+    client = FileTransferClient("localhost", 9876)
     if client.start():
         client.send_file("source/test1.jpg")
         client.send_file("source/test2.jpg")

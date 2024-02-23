@@ -306,6 +306,6 @@ class FileTransferServer:
 
 
 if __name__ == "__main__":
-    server = FileTransferServer(5000)
+    server = FileTransferServer(9876)
     if server.start():
         server.run()
