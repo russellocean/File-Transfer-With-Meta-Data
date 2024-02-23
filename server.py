@@ -1,5 +1,6 @@
 import logging
 import os
+import struct
 import sys
 from socket import *
 
@@ -184,8 +185,63 @@ class FileTransferServer:
             metadata. The metadata format is expected to be consistent with the client's
             sending format.
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
+        # Extract the length of the filename (2 bytes) and unpack it as an unsigned short
+        filename_length = struct.unpack("!H", data[:2])[0]
+        data = data[2:]  # Move past the extracted part
+
+        # Extract the filename using the previously obtained length and decode it from bytes to a string
+        filename = struct.unpack(f"!{filename_length}s", data[:filename_length])[
+            0
+        ].decode("utf-8")
+        data = data[filename_length:]  # Move past the extracted part
+
+        # Extract the length of the file extension (1 byte) and unpack it as an unsigned byte
+        file_extension_length = struct.unpack("!B", data[:1])[0]
+        data = data[1:]  # Move past the extracted part
+
+        # Extract the file extension using the previously obtained length and decode it from bytes to a string
+        file_extension = struct.unpack(
+            f"!{file_extension_length}s", data[:file_extension_length]
+        )[0].decode("utf-8")
+        data = data[file_extension_length:]  # Move past the extracted part
+
+        # Extract the length of the creation date string (1 byte) and unpack it as an unsigned byte
+        created_length = struct.unpack("!B", data[:1])[0]
+        data = data[1:]  # Move past the extracted part
+
+        # Extract the creation date string using the previously obtained length and decode it from bytes to a string
+        created = struct.unpack(f"!{created_length}s", data[:created_length])[0].decode(
+            "utf-8"
+        )
+        data = data[created_length:]  # Move past the extracted part
+
+        # Extract the file size (4 bytes) and unpack it as an unsigned int
+        file_size = struct.unpack("!I", data[:4])[0]
+        data = data[4:]  # Move past the extracted part
+
+        # Extract the length of the hash (1 byte) and unpack it as an unsigned byte
+        hash_length = struct.unpack("!B", data[:1])[0]
+        data = data[1:]  # Move past the extracted part
+
+        # Separate the file data and the hash data based on the hash length
+        file_data = data[
+            :-hash_length
+        ]  # All but the last 'hash_length' bytes are file data
+        hash_data = data[
+            -hash_length:
+        ]  # The last 'hash_length' bytes are the hash data
+
+        # Compile the extracted metadata into a dictionary
+        metadata = {
+            "filename": filename,
+            "file_extension": file_extension,
+            "created": created,
+            "file_size": file_size,
+            "hash_length": hash_length,
+        }
+
+        # Return the metadata, file data, and hash data
+        return metadata, file_data, hash_data
 
     def compute_hash(self, data, hash_length):
         """
