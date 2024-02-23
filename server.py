@@ -76,6 +76,8 @@ class FileTransferServer:
             self.server_socket = socket(AF_INET, SOCK_STREAM)
             self.server_socket.bind(("", self.port))
             self.server_socket.listen(5)
+            self.server_socket.settimeout(1.0)
+            self.is_running = True
             print(f"Server started and listening on port {self.port}")
             return True
         except OSError as e:
@@ -106,7 +108,9 @@ class FileTransferServer:
             # First, receive the size of the data, first 4 bytes contain this information
             data_size_bytes = client_socket.recv(4)
             if not data_size_bytes:
-                print("Failed to receive data size.")
+                print(
+                    "Failed to receive data size. Client likely closed the connection."
+                )
                 return None
 
             data_size = unpack("!I", data_size_bytes)[0]
@@ -131,7 +135,6 @@ class FileTransferServer:
             )
 
             if len(received_data) == data_size:
-
                 print("All data received successfully.")
             else:
                 print("Did not receive all expected data.")
@@ -177,7 +180,7 @@ class FileTransferServer:
         """
         while self.is_running:
             try:
-
+                # Step 1: Accept Connection
                 client_socket, address = self.server_socket.accept()
                 print(f"Connection from {address} has been established.")
 
@@ -185,9 +188,7 @@ class FileTransferServer:
                     # Step 2: Receive Data
                     received_data = self.receive_data(client_socket)
                     if not received_data:
-                        # No more data, client likely closed the connection
-                        self.shutdown()
-                        return
+                        break
 
                     # Step 3: Unpack Metadata
                     (
