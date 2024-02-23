@@ -1,0 +1,29 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Run Server",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/server.py",
+            "console": "integratedTerminal",
+            "consoleTitle": "Server",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: Run Client",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/client.py",
+            "console": "integratedTerminal",
+            "consoleTitle": "Client",
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Server and Client",
+            "configurations": ["Python: Run Server", "Python: Run Client"]
+        }
+    ]
+}
