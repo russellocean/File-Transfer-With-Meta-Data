@@ -123,8 +123,33 @@ class FileTransferServer:
             - This method is blocking; it will continuously run until the server is explicitly
             shutdown with the shutdown() method.
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
+        while self.is_running:
+            try:
+                client_socket, address = self.server_socket.accept()
+                print(f"Connection from {address} has been established.")
+
+                # The following steps are placeholders and need to be implemented
+                # Step 2: Receive Data
+                received_data = self.receive_data(client_socket)
+
+                # Step 3: Unpack Metadata
+                metadata, file_data, received_hash = self.unpack_metadata(received_data)
+
+                # Step 4: Verify Integrity
+                computed_hash = self.compute_hash(metadata + file_data)
+                if computed_hash == received_hash:
+                    # Step 5: Save File
+                    self.write_file(metadata["filename"], file_data)
+
+                    # Step 6: Send Hash Back
+                    client_socket.sendall(computed_hash)
+                else:
+                    print("Data integrity verification failed.")
+
+            except Exception as e:
+                print(f"An error occurred: {e}")
+            finally:
+                client_socket.close()
 
     def unpack_metadata(self, data):
         """
