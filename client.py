@@ -58,6 +58,7 @@ class FileTransferClient:
             self.client_socket = socket(AF_INET, SOCK_STREAM)
             self.client_socket.connect((self.host, self.port))
             print(f"Connected to server at {self.host}:{self.port}")
+            self.is_running = True
             return True
         except OSError as e:
             print(f"Failed to connect to server at {self.host}:{self.port}. Error: {e}")
@@ -305,6 +306,7 @@ class FileTransferClient:
         if self.client_socket:
             self.client_socket.close()
 
+        self.is_running = False
         self.logger.removeHandler(self.handler)
 
 
