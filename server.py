@@ -190,22 +190,25 @@ class FileTransferServer:
                         return
 
                     # Step 3: Unpack Metadata
-                    metadata, file_data, received_hash = self.unpack_metadata(
-                        received_data
-                    )
-                    print(f"Unpacked metadata: {str(metadata)}")
-                    print(f"Unpacked hash: {received_hash.hex()}")
+                    (
+                        filename,
+                        file_extension,
+                        created,
+                        file_size,
+                        hash_length,
+                        file_data,
+                    ) = self.unpack_metadata(received_data)
 
                     # Step 4: Verify Integrity
                     # The client calculates the has from the metadata + file data and sends it to the server, so we need to do the same
-                    combined_data = received_data[: -metadata["hash_length"]]
-                    computed_hash = self.compute_hash(
-                        combined_data, metadata["hash_length"]
-                    )
+                    received_hash = received_data[-hash_length:]
+
+                    combined_data = received_data[:-hash_length]
+                    computed_hash = self.compute_hash(combined_data, hash_length)
 
                     if computed_hash == received_hash:
                         # Step 5: Save File
-                        self.write_file(metadata["filename"], file_data)
+                        self.write_file(filename, file_data)
 
                         # Step 6: Send Hash Back
                         client_socket.sendall(computed_hash)
@@ -268,18 +271,21 @@ class FileTransferServer:
         # Hash length type: <class 'int'>
         # unpack the initial part of the metadata to get the lengths
         metadata_size = calcsize("!HBB")
+
         filename_length, file_extension_length, created_length = unpack(
             "!HBB", data[:metadata_size]
         )
 
-        # unpack the rest of the metadata to get the variable length parts
+        # Unpack the rest of the metadata to get the variable length parts
         filename = data[metadata_size : metadata_size + filename_length].decode("utf-8")
+
         file_extension = data[
             metadata_size
             + filename_length : metadata_size
             + filename_length
             + file_extension_length
         ].decode("utf-8")
+
         created = data[
             metadata_size
             + filename_length
@@ -288,6 +294,7 @@ class FileTransferServer:
             + file_extension_length
             + created_length
         ].decode("utf-8")
+
         file_size, hash_length = unpack(
             "!IB",
             data[
@@ -301,13 +308,8 @@ class FileTransferServer:
                 + 5
             ],
         )
-        print(f"Filename: {filename}")
-        print(f"File extension: {file_extension}")
-        print(f"Created date: {created}")
-        print(f"File size: {file_size}")
-        print(f"Hash length: {hash_length}")
 
-        # extract the file data and hash from the remaining data
+        # Extract the file data and hash from the remaining data
         file_data = data[
             metadata_size
             + filename_length
@@ -315,18 +317,11 @@ class FileTransferServer:
             + created_length
             + 5 : -hash_length
         ]
-        hash_data = data[-hash_length:]
-        print(f"File data: {str(file_data)[:50]}...{str(file_data)[-50:]}")
-        print(f"Hash data: {hash_data.hex()}")
-        metadata = {
-            "filename": filename,
-            "file_extension": file_extension,
-            "created": created,
-            "file_size": file_size,
-            "hash_length": hash_length,
-        }
 
-        return metadata, file_data, hash_data
+        hash_data = data[-hash_length:]
+
+        # Return the expected tuple format
+        return (filename, file_extension, created, file_size, hash_length, file_data)
 
     def compute_hash(self, data, hash_length):
         """
