@@ -1,6 +1,7 @@
+import logging
+import os
+import sys
 from socket import *
-from struct import pack, unpack
-import os, hashlib, sys, logging
 
 
 class FileTransferServer:
@@ -41,21 +42,21 @@ class FileTransferServer:
 
     def start(self):
         """
-        Starts the server, binding it to the specified host and port, and begins listening 
+        Starts the server, binding it to the specified host and port, and begins listening
         for incoming connections.
 
-        This method sets up a TCP/IP socket, binds it to the specified port, 
-        and sets the server to listen for incoming connections. It also sets a 
-        socket timeout of 1.0 seconds and marks the server as running by setting 
+        This method sets up a TCP/IP socket, binds it to the specified port,
+        and sets the server to listen for incoming connections. It also sets a
+        socket timeout of 1.0 seconds and marks the server as running by setting
         self.is_running to True.
-        
-        Do NOT attempt to accept a connection or receive any messages from the client in 
+
+        Do NOT attempt to accept a connection or receive any messages from the client in
         this function. That will be done in the run() function.
 
-        Returns: 
+        Returns:
             bool: True if the server successfully starts and False if an error occurs during
             socket creation or binding, indicating the server is not ready to accept connections.
-        
+
         Exceptions:
             - OSError: Indicates a problem with socket creation, binding, or listening, which
             is logged for debugging purposes.
@@ -69,9 +70,15 @@ class FileTransferServer:
             - This method must be called before the server begins to accept connections with
             the run() method.
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
-
+        try:
+            self.server_socket = socket(AF_INET, SOCK_STREAM)
+            self.server_socket.bind(("", self.port))
+            self.server_socket.listen(5)
+            self.logger.info(f"Server started and listening on port {self.port}")
+            return True
+        except OSError as e:
+            self.logger.error(f"Failed to start server: {e}")
+            return False
 
     def write_file(self, filename, data):
         """
@@ -83,15 +90,14 @@ class FileTransferServer:
         with open(os.path.join("received_files", filename), "wb") as file:
             file.write(data)
 
-
     def run(self):
         """
         Continuously accepts client connections and handles file transfers.
 
         After starting the server with start(), this method listens for and accepts client
         connections. For each connection, it enters a loop to receive metadata and file data,
-        computes a hash for integrity verification, save the file, and sends the hash back to 
-        the client. It continues accepting new connections on client disconnection until the 
+        computes a hash for integrity verification, save the file, and sends the hash back to
+        the client. It continues accepting new connections on client disconnection until the
         server is stopped.
 
         As the files are often larger than a single recv() call can handle, you will need to
@@ -99,7 +105,7 @@ class FileTransferServer:
         to keep track of how much data you have received and compare it to the expected file size.
         Be careful not to request too MUCH data when calling receive as this could cause you
         to receive some of the next file's metadata.
-        
+
         Exceptions:
             - TimeoutError: Occurs when accepting a connection times out, handled internally
             to allow the server to check if it should continue running or shut down.
@@ -120,13 +126,12 @@ class FileTransferServer:
         # TODO: Implement the functionality described in this function's docstring
         pass
 
-
     def unpack_metadata(self, data):
         """
         Extracts file metadata from a byte sequence received from a client.
 
-        This method parses the received metadata to extract details such as the file name, 
-        file type, creation date, file size, and hash length. These details are used to 
+        This method parses the received metadata to extract details such as the file name,
+        file type, creation date, file size, and hash length. These details are used to
         process and store the incoming file appropriately.
 
         Packed Data Format:
@@ -157,7 +162,6 @@ class FileTransferServer:
         # TODO: Implement the functionality described in this function's docstring
         pass
 
-
     def compute_hash(self, data, hash_length):
         """
         Generates a hash of the provided data using the SHAKE-128 algorithm.
@@ -165,8 +169,8 @@ class FileTransferServer:
         In this assignment, we'll use the hashlib library to compute a hash of the data
         being shared between the client and the server. A hash is a fixed-length string
         generated based on arbitrary input data. The same data will result in the same
-        hash, and any change to the data will result in a different hash.  We're using this 
-        very simplistically to introduce the idea of hashing and integrity checking, which 
+        hash, and any change to the data will result in a different hash.  We're using this
+        very simplistically to introduce the idea of hashing and integrity checking, which
         we'll be exploring in more detail later in the semester.
 
         1. Import hashlib and call hashlib.shake_128() to create a new SHAKE-128 hash object.
@@ -175,7 +179,7 @@ class FileTransferServer:
 
         The shake_128 algorithm is convenient for us since we can specify the length of the
         hash it produces. This allows us to generate a short hash for use in our tests.
-        
+
         Parameters:
             - data (bytes): Data for which the hash will be computed.
             - hash_length (int): Specifies the desired length of the hash output in bytes.
@@ -189,7 +193,6 @@ class FileTransferServer:
         """
         # TODO: Implement the functionality described in this function's docstring
         pass
-
 
     def shutdown(self):
         """
@@ -207,11 +210,11 @@ class FileTransferServer:
             server.shutdown()
 
         Note:
-            - Call this method to cleanly shut down the server after use or in case of an error.            
+            - Call this method to cleanly shut down the server after use or in case of an error.
             - Do NOT set server_socket to None in this method. The autograder will examine
                 server_socket to ensure it is closed properly.
         """
-        self.logger.info('Server is shutting down...')
+        self.logger.info("Server is shutting down...")
 
         # TODO: Implement the functionality described in this function's docstring
 
