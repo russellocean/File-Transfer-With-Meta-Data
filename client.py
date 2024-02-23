@@ -1,5 +1,7 @@
+import hashlib
 import logging
 import os
+import struct
 import sys
 import time
 from socket import *
@@ -162,11 +164,27 @@ class FileTransferClient:
         """
         # The following code gets the various file information you need to complete this function
         filename = os.path.basename(filepath)
-        file_type = os.path.splitext(filename)[1].replace(".", "")
+        file_extension = os.path.splitext(filename)[1].replace(".", "")
         created_date = time.ctime(os.path.getctime(filepath))
         file_size = os.path.getsize(filepath)
 
-        # TODO: Implement the functionality described in this function's docstring
+        # Encode the metadata
+        filename_bytes = filename.encode("utf-8")
+        file_extension_bytes = file_extension.encode("utf-8")
+        created_date_bytes = created_date.encode("utf-8")
+
+        # Pack the metadata
+        metadata = struct.pack(
+            f"!H{len(filename_bytes)}sB{len(file_extension_bytes)}sB{len(created_date_bytes)}sI",
+            len(filename_bytes),
+            filename_bytes,
+            len(file_extension_bytes),
+            file_extension_bytes,
+            len(created_date_bytes),
+            created_date_bytes,
+            file_size,
+        )
+        return metadata
 
     def compute_hash(self, data):
         """
@@ -193,8 +211,9 @@ class FileTransferClient:
         Returns:
             bytes: The computed hash.
         """
-        # TODO: Implement the functionality described in this function's docstring
-        pass
+        hash_obj = hashlib.shake_128()
+        hash_obj.update(data)
+        return hash_obj.digest(self.hash_length)
 
     def shutdown(self):
         """
@@ -223,7 +242,8 @@ class FileTransferClient:
         """
         self.logger.info("Client is shutting down...")
 
-        # TODO: Implement the functionality described in this function's docstring
+        if self.client_socket:
+            self.client_socket.close()
 
         self.logger.removeHandler(self.handler)
 
